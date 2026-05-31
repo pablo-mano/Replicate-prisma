@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRISMA // Persistent Recon-Strike Intelligence &amp; Map</title>
+<style>
+  /* ============================================================
+     PRISMA — fictional C2 dashboard. All data is MOCK / synthetic.
+     Single-file build: layout + canvas maps/charts + JS animation.
+     ============================================================ */
+  :root{
+    --bg:#02060a;
+    --panel:#05121b;
+    --panel-2:#071a26;
+    --grid:#0c2b3a;
+    --line:#10455e;
+    --cyan:#34d6ff;
+    --cyan-dim:#1c7d9c;
+    --teal:#36f1c4;
+    --amber:#ffb22e;
+    --amber-dim:#9a6b14;
+    --red:#ff3b46;
+    --green:#34ff84;
+    --text:#9fd9ec;
+    --text-dim:#4d7e92;
+    --white:#dff4fb;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:#000;
+    color:var(--text);
+    font-family:"Consolas","DejaVu Sans Mono","Courier New",monospace;
+    font-size:11px;
+    letter-spacing:.4px;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* faint scanline + vignette over the whole screen for the broadcast look */
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;
+    background:
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.18) 2px 3px);
+    mix-blend-mode:multiply;
+  }
+  .cnn{position:fixed;top:26px;left:34px;z-index:50;
+    font-family:Arial,Helvetica,sans-serif;font-weight:800;font-style:italic;
+    font-size:34px;letter-spacing:-2px;color:#e8e8e8;
+    text-shadow:0 0 1px #fff;opacity:.92;user-select:none}
+  .cnn span{position:relative}
+
+  #app{
+    height:100vh;width:100vw;background:var(--bg);
+    padding:10px 14px 6px;
+    display:grid;
+    grid-template-rows:auto 1fr auto auto;
+    gap:8px;
+  }
+
+  /* ---------- generic panel chrome ---------- */
+  .panel{
+    background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border:1px solid var(--line);
+    position:relative;
+    box-shadow:inset 0 0 22px rgba(0,40,60,.35);
+  }
+  .panel-hd{
+    display:flex;align-items:center;gap:8px;
+    padding:4px 8px;border-bottom:1px solid var(--line);
+    color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;
+    font-size:10.5px;background:rgba(255,178,46,.05);
+  }
+  .panel-hd .tag{color:var(--text-dim);margin-left:auto;letter-spacing:.6px}
+  .panel-hd .dot{color:var(--teal)}
+  .sub{color:var(--cyan);text-transform:uppercase;font-size:9.5px;letter-spacing:1px;
+    padding:3px 8px;border-bottom:1px solid var(--grid);display:flex;gap:14px;flex-wrap:wrap}
+  .sub b{color:var(--text-dim);font-weight:400}
+  .btn{
+    border:1px solid var(--line);background:rgba(16,69,94,.25);
+    color:var(--cyan);padding:2px 8px;font:inherit;font-size:9.5px;
+    text-transform:uppercase;letter-spacing:1px;cursor:pointer;border-radius:1px;
+  }
+  .btn:hover{background:rgba(52,214,255,.18);color:var(--white)}
+  .btn.on{background:rgba(52,241,196,.18);border-color:var(--teal);color:var(--teal)}
+  .btn.red{color:var(--red);border-color:#5e1c20;background:rgba(255,59,70,.08)}
+  .btn.red:hover{background:rgba(255,59,70,.2)}
+
+  /* ---------- HEADER ---------- */
+  header{
+    display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    border:1px solid var(--line);background:linear-gradient(180deg,#06141d,#03090d);
+    padding:6px 14px;
+  }
+  .brand{display:flex;align-items:baseline;gap:14px;margin-left:96px}
+  .brand h1{margin:0;font-size:26px;letter-spacing:14px;color:var(--cyan);
+    text-shadow:0 0 14px rgba(52,214,255,.45);font-weight:600}
+  .brand .meta{color:var(--text-dim);font-size:9px;line-height:1.5;text-transform:uppercase;letter-spacing:1.5px}
+  .op{justify-self:center;border:1px solid var(--amber-dim);padding:5px 26px;text-align:center;
+    background:rgba(255,178,46,.05);box-shadow:0 0 18px rgba(255,178,46,.12) inset}
+  .op .t{color:var(--amber);font-size:16px;letter-spacing:8px;text-shadow:0 0 10px rgba(255,178,46,.4)}
+  .op .s{color:var(--text-dim);font-size:9px;letter-spacing:3px;margin-top:2px}
+  .hud-right{justify-self:end;display:flex;align-items:center;gap:16px}
+  #clock{font-size:26px;color:var(--amber);letter-spacing:3px;text-shadow:0 0 12px rgba(255,178,46,.45)}
+  .chips{display:grid;grid-template-columns:repeat(3,auto);gap:2px 10px;font-size:8.5px}
+  .chip{display:flex;gap:5px;align-items:center;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim)}
+  .chip b{color:var(--green)}
+  .chip.warn b{color:var(--amber)}
+  .chip.bad b{color:var(--red)}
+
+  /* ---------- MAIN GRID ---------- */
+  main{display:grid;grid-template-columns:1fr 1fr 218px;gap:8px;min-height:0}
+  .col{display:flex;flex-direction:column;gap:8px;min-height:0}
+  .grow{flex:1;min-height:0;display:flex;flex-direction:column}
+  .map-wrap{flex:1;position:relative;min-height:0}
+  canvas{display:block;width:100%;height:100%}
+  .toolbar{display:flex;gap:5px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--grid)}
+  .toolbar .spacer{flex:1}
+
+  /* overlay readout boxes on maps */
+  .readout{
+    position:absolute;border:1px solid var(--line);background:rgba(3,16,24,.85);
+    padding:5px 8px;backdrop-filter:blur(2px);font-size:9px;line-height:1.7;
+  }
+  .readout .rh{color:var(--amber);letter-spacing:1.5px;border-bottom:1px solid var(--grid);
+    margin-bottom:3px;padding-bottom:2px;text-transform:uppercase}
+  .kv{display:flex;justify-content:space-between;gap:18px}
+  .kv span:first-child{color:var(--text-dim)}
+  .kv span:last-child{color:var(--white)}
+  .kv .g{color:var(--green)}
+  .corner-tl{top:8px;left:8px}
+  .corner-tr{top:8px;right:8px}
+  .corner-bl{bottom:8px;left:8px}
+  .corner-br{bottom:8px;right:8px}
+
+  /* tables / lists */
+  .listbox{display:flex;flex-direction:column;min-height:0}
+  .listbox .lh{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;
+    padding:3px 8px;border-bottom:1px solid var(--grid);display:flex}
+  .rows{overflow:auto;flex:1}
+  .row{display:grid;align-items:center;padding:2px 8px;border-bottom:1px solid rgba(12,43,58,.5);font-size:9.5px}
+  .row:hover{background:rgba(52,214,255,.06)}
+  .mono{font-variant-numeric:tabular-nums}
+  .pip{width:6px;height:6px;border-radius:50%;display:inline-block}
+  .scrollthin::-webkit-scrollbar{width:6px;height:6px}
+  .scrollthin::-webkit-scrollbar-thumb{background:var(--line)}
+  .scrollthin::-webkit-scrollbar-track{background:transparent}
+
+  /* shell log */
+  #shell{font-size:9.5px;line-height:1.55;padding:4px 8px;overflow:auto;flex:1;white-space:pre-wrap}
+  .log .ts{color:var(--cyan-dim)}
+  .log .INFO{color:var(--text-dim)}
+  .log .WARN{color:var(--amber)}
+  .log .ALERT{color:var(--red);text-shadow:0 0 8px rgba(255,59,70,.5)}
+  .log .msg{color:var(--text)}
+  .prompt{color:var(--teal);padding:2px 8px;border-top:1px solid var(--grid);font-size:9.5px}
+  .prompt .c{color:var(--text-dim)}
+  .cursor{display:inline-block;width:7px;height:12px;background:var(--teal);
+    vertical-align:-2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* analytics */
+  .analytics{display:grid;grid-template-columns:auto auto auto auto 1fr;gap:14px;align-items:center;padding:6px 10px}
+  .bignum{line-height:1}
+  .bignum .n{font-size:34px;color:var(--cyan);text-shadow:0 0 12px rgba(52,214,255,.4)}
+  .bignum .l{font-size:8.5px;color:var(--text-dim);letter-spacing:1px}
+  .gauge{text-align:center}
+  .gauge .l{font-size:8px;color:var(--text-dim);letter-spacing:1px;margin-top:1px}
+  .ewl{text-align:center}
+  .ewl .n{font-size:24px;color:var(--amber)}
+  .ewl .l{font-size:8px;color:var(--text-dim)}
+  .tempo{display:flex;flex-direction:column;height:100%;justify-content:center}
+  .tempo .l{font-size:8px;color:var(--text-dim);letter-spacing:1px;display:flex;justify-content:space-between;margin-bottom:3px}
+
+  /* footer */
+  footer{display:flex;align-items:center;gap:22px;border:1px solid var(--line);
+    background:#03090d;padding:4px 14px;font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-dim)}
+  footer b{color:var(--cyan)}
+  footer .g{color:var(--green)}
+  footer .a{color:var(--amber)}
+  footer .spacer{flex:1}
+  .blink-slow{animation:blink 1.6s steps(1) infinite}
+</style>
+</head>
+<body>
+<div class="cnn"><span>CNN</span></div>
+
+<div id="app">
+
+  <!-- ===================== HEADER ===================== -->
+  <header>
+    <div class="brand">
+      <h1>PRISMA</h1>
+      <div class="meta">
+        Persistent Recon-Strike Intelligence &amp; Map<br>
+        Build 7.42.1116 &nbsp;//&nbsp; Clearance TS-SI
+      </div>
+    </div>
+    <div class="op">
+      <div class="t">OPERATION STEEL HORIZON</div>
+      <div class="s">PHASE III &nbsp;//&nbsp; AO RAVEN &nbsp;//&nbsp; D+12 &nbsp;//&nbsp; ROE GREEN</div>
+    </div>
+    <div class="hud-right">
+      <div class="chips">
+        <div class="chip">LASER <b>✓</b></div>
+        <div class="chip">BLINK <b>OK</b></div>
+        <div class="chip warn">EW <b>WARN</b></div>
+        <div class="chip">FLEET <b id="fleetchip">5/5</b></div>
+        <div class="chip">AUTH <b>TS-SI</b></div>
+        <div class="chip">ACT <b class="blink-slow">●</b></div>
+      </div>
+      <div id="clock">23:07:28</div>
+    </div>
+  </header>
+
+  <!-- ===================== MAIN ===================== -->
+  <main>
+
+    <!-- ---------- LEFT: STRIKE HISTORY ---------- -->
+    <div class="col">
+      <div class="panel grow">
+        <div class="panel-hd"><span class="dot">◆</span> Strike History <span style="color:var(--text-dim)">// AO RAVEN</span>
+          <span class="tag">LYUTI STRIKE HISTORY // AO RF-SOUTH</span></div>
+        <div class="toolbar">
+          <button class="btn">LOAD CSV</button>
+          <button class="btn">REPLAY</button>
+          <button class="btn on">▶ ANALYSIS</button>
+          <span class="spacer"></span>
+          <button class="btn red">CLEAR</button>
+        </div>
+        <div class="sub">
+          <span>CENTER <b>44.812°N 38.752°E</b></span>
+          <span>ZOOM <b>0.6×</b></span>
+          <span>GRID <b>UTM-37U</b></span>
+          <span>PROJ <b>WGS84</b></span>
+        </div>
+        <div class="map-wrap">
+          <canvas id="historyMap"></canvas>
+          <div class="readout corner-bl" id="fleetTotals">
+            <div class="rh">Fleet Totals</div>
+            <div class="kv"><span>TRACKS</span><span class="mono">1 204</span></div>
+            <div class="kv"><span>WAYPOINTS</span><span class="mono">1 347</span></div>
+            <div class="kv"><span>PATH</span><span class="mono">7 918 km</span></div>
+            <div class="kv"><span>LAST</span><span class="mono">23:05:41Z</span></div>
+          </div>
+          <div class="readout corner-br">
+            <div class="rh">Confirmed Kills // BDA Fusion</div>
+            <div class="kv"><span>HARD</span><span class="g">63</span></div>
+            <div class="kv"><span>PROB</span><span>21</span></div>
+            <div class="kv"><span>ASSESS</span><span>09</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel listbox" style="height:188px">
+        <div class="lh"><span style="flex:1">◆ ACTIVE TRACKS</span><span style="color:var(--text-dim)">LYUTI STRIKES // T-24H</span></div>
+        <div class="rows scrollthin" id="trackRows"></div>
+      </div>
+    </div>
+
+    <!-- ---------- CENTER: MISSION PLANNER ---------- -->
+    <div class="col">
+      <div class="panel grow">
+        <div class="panel-hd"><span class="dot">◆</span> Kamikaze PKG
+          <span class="tag">MISSION PLANNER // STRIKE PKG KAMIKAZE</span></div>
+        <div class="toolbar">
+          <button class="btn">LOAD</button>
+          <button class="btn">RESET</button>
+          <button class="btn red">CLEAR</button>
+          <span class="spacer"></span>
+          <button class="btn on">FLEET ✓</button>
+          <button class="btn">MAX</button>
+          <button class="btn">⊟</button>
+        </div>
+        <div class="sub">
+          <span>CENTER <b>51.590°N 38.876°E</b></span>
+          <span>ZOOM <b>1.0×</b></span>
+          <span>GRID <b>UTM-37U</b></span>
+          <span>AUTO-UPLOAD ON CHANGE</span>
+        </div>
+        <div class="map-wrap">
+          <canvas id="missionMap"></canvas>
+          <div class="readout corner-tr" id="missionSolution">
+            <div class="rh">Mission Solution</div>
+            <div class="kv"><span>WAYPOINTS</span><span class="mono" id="ms-wp">06</span></div>
+            <div class="kv"><span>DIST</span><span class="mono" id="ms-dist">312.4 km</span></div>
+            <div class="kv"><span>ETA</span><span class="mono" id="ms-eta">00:48:12</span></div>
+            <div class="kv"><span>CRZ</span><span class="mono">148 km/h</span></div>
+            <div style="border-top:1px solid var(--grid);margin:3px 0"></div>
+            <div class="kv"><span>PKG AUTH</span><span class="g">GREEN</span></div>
+            <div class="kv"><span>ROE</span><span class="g">GREEN</span></div>
+            <div class="kv"><span>EW</span><span style="color:var(--amber)">NOMINAL</span></div>
+            <div class="kv"><span>BLINK</span><span class="g">✓ 94%</span></div>
+          </div>
+          <div class="readout corner-bl">
+            <div class="kv"><span>PLAN MODE</span><span class="g">●</span></div>
+            <div class="kv"><span>LIVE UPLOAD</span><span class="mono" id="upl">SYNC</span></div>
+          </div>
+          <div class="readout corner-br">
+            <div class="kv"><span>KAMIKAZE-6</span><span class="mono">PKG 0127</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- RIGHT COLUMN ---------- -->
+    <div class="col" style="gap:8px">
+      <div class="panel listbox" style="height:150px">
+        <div class="lh"><span style="flex:1">TYPE</span><span>STATUS</span></div>
+        <div class="rows" id="threatRows"></div>
+        <div class="sub" style="border-top:1px solid var(--grid);border-bottom:none">
+          <span style="font-size:8.5px">FUSED RADAR + CONFIDENCE</span>
+          <span style="margin-left:auto;font-size:8.5px">AGE <b id="fuseAge">43s</b></span>
+        </div>
+      </div>
+
+      <div class="panel grow">
+        <div class="panel-hd" style="font-size:9.5px"><span class="dot">◆</span> Signal Chain
+          <span class="tag">RF + LINK1</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+          <div style="flex:1;min-height:0;position:relative"><canvas id="sigWave"></canvas></div>
+          <div class="sub" style="border-bottom:1px solid var(--grid)"><span>SPECTRUM <b>L-BAND</b></span><span style="margin-left:auto" id="sigFreq">1248–1356 MHz</span></div>
+          <div style="flex:1;min-height:0;position:relative"><canvas id="sigBars"></canvas></div>
+          <div class="sub" style="border-bottom:none;font-size:8px"><span>AES-256-GCM</span><span style="margin-left:auto">FREQ-HOP 360h/min · L1</span></div>
+        </div>
+      </div>
+
+      <div class="panel listbox" style="height:150px">
+        <div class="panel-hd" style="font-size:9.5px"><span class="dot">◆</span> Fleet Status <span class="tag">LYUTI-A</span></div>
+        <div class="rows" id="fleetRows"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================== BOTTOM ROW ===================== -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;height:212px">
+    <div class="panel" style="display:flex;flex-direction:column">
+      <div class="panel-hd"><span class="dot">◆</span> PRISMA Shell
+        <span style="color:var(--text-dim)">// C2 EVENT BUS // TTY/sec0</span>
+        <span class="tag" id="busStats">MSG 18411 · LOSS 0.04% · LATENCY 12ms · NET ✓</span></div>
+      <div id="shell" class="log scrollthin"></div>
+      <div class="prompt"><span class="c">prisma@raven-7</span> <span class="c">:~$</span> tail -f /var/c2/lyuti.log | rg 'BDA|STRIKE' <span class="cursor"></span></div>
+    </div>
+
+    <div class="panel" style="display:flex;flex-direction:column">
+      <div class="panel-hd"><span class="dot">◆</span> Strike Analytics
+        <span class="tag">T-24H ROLLING · SAMPLE 3 SHEET · FUSION</span></div>
+      <div class="analytics">
+        <div class="bignum"><div class="n" id="strikeN">157</div><div class="l">STRIKES // T-24H</div></div>
+        <div class="gauge"><canvas id="g1" width="62" height="62"></canvas><div class="l">AVG PK</div></div>
+        <div class="gauge"><canvas id="g2" width="62" height="62"></canvas><div class="l">BLINK</div></div>
+        <div class="ewl"><div class="n" id="ewN">3%</div><div class="l">EW LOSS</div></div>
+        <div class="tempo">
+          <div class="l"><span>STRIKE TEMPO · 24H</span><span>TOTAL <b style="color:var(--cyan)">157</b></span></div>
+          <div style="flex:1;position:relative"><canvas id="tempo"></canvas></div>
+        </div>
+      </div>
+      <div class="sub" style="border-top:1px solid var(--grid)">◆ ENGAGEMENT QUEUE</div>
+      <div class="rows scrollthin" id="queueRows" style="flex:1;overflow:auto"></div>
+    </div>
+  </div>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer>
+    <span>CPU <b id="cpu">31%</b></span>
+    <span>MEM <b id="mem">4.3/64G</b></span>
+    <span>GPU <b>RTX A6000 ×4</b></span>
+    <span>DISK <b id="disk">2890 MB/s</b></span>
+    <span>TEMP <b id="temp">46°C</b></span>
+    <span class="spacer"></span>
+    <span class="g">AR FRAME UPLOAD COMPLETE</span>
+    <span>·</span><span class="g">ROE GREEN</span>
+    <span>·</span><span class="a">AUTH TS-SI</span>
+    <span>·</span><span>WX <b>03/05</b></span>
+    <span>·</span><span>WIND <b id="wind">07 KT 240°</b></span>
+  </footer>
+</div>
+
+<script>
+/* ================================================================
+   ALL DATA BELOW IS SYNTHETIC / MOCK. No real systems are involved.
+   ================================================================ */
+const R = (a,b)=>a+Math.random()*(b-a);
+const RI = (a,b)=>Math.floor(R(a,b+1));
+const pad = (n,l=2)=>String(n).padStart(l,'0');
+
+/* ---------- live clock ---------- */
+let t = new Date(); t.setHours(23,7,28,0);
+const clock = document.getElementById('clock');
+setInterval(()=>{ t = new Date(t.getTime()+1000);
+  clock.textContent = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+},1000);
+
+/* ---------- HiDPI canvas helper ---------- */
+function fit(cv){
+  const r = cv.getBoundingClientRect();
+  const d = window.devicePixelRatio||1;
+  cv.width = Math.max(2,r.width*d); cv.height = Math.max(2,r.height*d);
+  const ctx = cv.getContext('2d'); ctx.setTransform(d,0,0,d,0,0);
+  return {ctx,w:r.width,h:r.height};
+}
+
+/* ================= STRIKE HISTORY MAP ================= */
+const histCv = document.getElementById('historyMap');
+// pre-generate a coastline-ish blob + scattered colorful tracks
+const histTracks = Array.from({length:1100},()=>{
+  const cx=R(.28,.62), cy=R(.30,.72);
+  return {x:cx+R(-.12,.12), y:cy+R(-.10,.10),
+    c:`hsl(${RI(40,200)} 90% ${RI(50,65)}%)`, r:R(.6,1.8)};
+});
+function drawGrid(ctx,w,h){
+  ctx.strokeStyle='rgba(16,69,94,.35)'; ctx.lineWidth=1;
+  for(let x=0;x<w;x+=34){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let y=0;y<h;y+=34){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+}
+function compass(ctx,x,y,r){
+  ctx.save();ctx.translate(x,y);
+  ctx.strokeStyle='var(--cyan)';ctx.strokeStyle='#34d6ff';ctx.globalAlpha=.7;
+  ctx.beginPath();ctx.arc(0,0,r,0,7);ctx.stroke();
+  for(let a=0;a<360;a+=30){const rad=a*Math.PI/180;
+    ctx.beginPath();ctx.moveTo(Math.cos(rad)*(r-4),Math.sin(rad)*(r-4));
+    ctx.lineTo(Math.cos(rad)*r,Math.sin(rad)*r);ctx.stroke();}
+  ctx.fillStyle='#34d6ff';ctx.beginPath();
+  ctx.moveTo(0,-r+2);ctx.lineTo(4,0);ctx.lineTo(-4,0);ctx.fill();
+  ctx.globalAlpha=1;ctx.fillStyle='#9fd9ec';ctx.font='8px monospace';ctx.textAlign='center';
+  ctx.fillText('N',0,-r-3);ctx.restore();
+}
+function drawHistory(){
+  const {ctx,w,h}=fit(histCv);
+  ctx.clearRect(0,0,w,h); drawGrid(ctx,w,h);
+  // faint landmass polygon
+  ctx.fillStyle='rgba(12,43,58,.45)';ctx.beginPath();
+  ctx.moveTo(w*.20,h*.25);ctx.lineTo(w*.55,h*.18);ctx.lineTo(w*.72,h*.40);
+  ctx.lineTo(w*.66,h*.72);ctx.lineTo(w*.40,h*.88);ctx.lineTo(w*.18,h*.70);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='rgba(52,214,255,.25)';ctx.stroke();
+  // tracks
+  for(const p of histTracks){
+    ctx.fillStyle=p.c;ctx.globalAlpha=.85;
+    ctx.fillRect(p.x*w,p.y*h,p.r,p.r);
+  }
+  ctx.globalAlpha=1;
+  // a few highlighted strike vectors
+  ctx.strokeStyle='rgba(255,178,46,.55)';ctx.lineWidth=1;
+  for(let i=0;i<6;i++){ctx.beginPath();
+    ctx.moveTo(R(.3,.6)*w,R(.3,.7)*h);ctx.lineTo(R(.3,.6)*w,R(.3,.7)*h);ctx.stroke();}
+  compass(ctx,w-30,34,16);
+}
+
+/* ================= MISSION PLANNER MAP ================= */
+const misCv = document.getElementById('missionMap');
+const cities = [
+  ['KYIV',.30,.62],['ODESA',.22,.82],['ZAPORIZHZHIA',.40,.70],['DNIPRO',.42,.60],
+  ['ROSTOV',.55,.74],['VOLGODONSK',.60,.66],['VOLGOGRAD',.68,.58],['ASTRAKHAN',.76,.70],
+  ['KRASNODAR',.50,.86],['SAMARA',.86,.30],['PENZA',.74,.30],['SARANSK',.80,.20],
+  ['ULYANOVSK',.90,.22],['RYAZAN',.66,.18],['ORYOL',.56,.30],['VORONEZH',.58,.46],
+  ['SARATOV',.82,.42],['KURSK',.48,.36]
+];
+// mission waypoints (normalized)
+const wps=[[.30,.62],[.40,.55],[.50,.50],[.58,.46],[.66,.44],[.74,.41]];
+function drawMission(t){
+  const {ctx,w,h}=fit(misCv);
+  ctx.clearRect(0,0,w,h);drawGrid(ctx,w,h);
+  // territory boundary
+  ctx.strokeStyle='rgba(255,178,46,.30)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.moveTo(w*.18,h*.55);ctx.lineTo(w*.46,h*.92);ctx.lineTo(w*.95,h*.78);
+  ctx.lineTo(w*.92,h*.10);ctx.lineTo(w*.40,h*.08);ctx.lineTo(w*.18,h*.30);ctx.stroke();
+  ctx.setLineDash([]);
+  // range rings around launch
+  const lx=wps[0][0]*w, ly=wps[0][1]*h;
+  ctx.strokeStyle='rgba(52,241,196,.18)';
+  for(let r=40;r<w;r+=46){ctx.beginPath();ctx.arc(lx,ly,r,0,7);ctx.stroke();}
+  // cities
+  ctx.font='8px monospace';
+  for(const [name,x,y] of cities){
+    const px=x*w,py=y*h;
+    ctx.fillStyle='#ffb22e';ctx.beginPath();ctx.arc(px,py,1.6,0,7);ctx.fill();
+    ctx.fillStyle='rgba(159,217,236,.75)';ctx.textAlign='left';
+    ctx.fillText(name,px+4,py+3);
+    // alt readout under some cities
+    if(Math.random()<.0){}
+  }
+  // scattered tactical markers (triangles)
+  ctx.strokeStyle='rgba(52,241,196,.8)';ctx.lineWidth=1;
+  for(let i=0;i<26;i++){
+    const x=R(.22,.9)*w,y=R(.1,.85)*h,s=3;
+    ctx.beginPath();ctx.moveTo(x,y-s);ctx.lineTo(x+s,y+s);ctx.lineTo(x-s,y+s);ctx.closePath();ctx.stroke();
+  }
+  // mission route
+  ctx.strokeStyle='#34f1c4';ctx.lineWidth=1.6;ctx.shadowColor='#34f1c4';ctx.shadowBlur=6;
+  ctx.beginPath();wps.forEach((p,i)=>{const x=p[0]*w,y=p[1]*h;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+  ctx.shadowBlur=0;
+  // waypoint diamonds
+  wps.forEach((p,i)=>{const x=p[0]*w,y=p[1]*h;
+    ctx.fillStyle=i===0?'#34ff84':(i===wps.length-1?'#ff3b46':'#34d6ff');
+    ctx.save();ctx.translate(x,y);ctx.rotate(Math.PI/4);ctx.fillRect(-2.6,-2.6,5.2,5.2);ctx.restore();
+    ctx.fillStyle='#9fd9ec';ctx.font='7px monospace';ctx.textAlign='center';ctx.fillText('WP'+i,x,y-6);
+  });
+  // animated pulse travelling along route to last leg
+  const seg=(t/2200)%(wps.length-1);const i=Math.floor(seg),f=seg-i;
+  const a=wps[i],b=wps[i+1];
+  const px=(a[0]+(b[0]-a[0])*f)*w, py=(a[1]+(b[1]-a[1])*f)*h;
+  ctx.fillStyle='#fff';ctx.shadowColor='#34f1c4';ctx.shadowBlur=10;
+  ctx.beginPath();ctx.arc(px,py,3,0,7);ctx.fill();ctx.shadowBlur=0;
+  compass(ctx,w-30,34,16);
+}
+
+/* ================= SIGNAL CHAIN ================= */
+const waveCv=document.getElementById('sigWave');
+const barsCv=document.getElementById('sigBars');
+let waveBuf=Array.from({length:120},()=>R(-1,1));
+function drawWave(){
+  const {ctx,w,h}=fit(waveCv);ctx.clearRect(0,0,w,h);
+  waveBuf.push(R(-1,1)*(0.5+0.5*Math.sin(Date.now()/400)));waveBuf.shift();
+  ctx.strokeStyle='rgba(16,69,94,.4)';ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
+  ctx.strokeStyle='#34d6ff';ctx.lineWidth=1.2;ctx.shadowColor='#34d6ff';ctx.shadowBlur=5;ctx.beginPath();
+  waveBuf.forEach((v,i)=>{const x=i/waveBuf.length*w,y=h/2+v*h*0.38;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.stroke();ctx.shadowBlur=0;
+}
+function drawBars(){
+  const {ctx,w,h}=fit(barsCv);ctx.clearRect(0,0,w,h);
+  const n=40,bw=w/n;
+  for(let i=0;i<n;i++){
+    const v=Math.abs(Math.sin(i*0.6+Date.now()/600))*R(.4,1);
+    const bh=v*h;ctx.fillStyle=`rgba(54,241,196,${.4+v*.5})`;
+    ctx.fillRect(i*bw,h-bh,bw-1,bh);
+  }
+}
+
+/* ================= ANALYTICS GAUGES & TEMPO ================= */
+function ring(id,val,color){
+  const cv=document.getElementById(id),ctx=cv.getContext('2d');
+  const w=cv.width,h=cv.height,cx=w/2,cy=h/2,r=24;
+  ctx.clearRect(0,0,w,h);
+  ctx.lineWidth=5;ctx.strokeStyle='rgba(16,69,94,.6)';
+  ctx.beginPath();ctx.arc(cx,cy,r,0,7);ctx.stroke();
+  ctx.strokeStyle=color;ctx.shadowColor=color;ctx.shadowBlur=8;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+val/100*Math.PI*2);ctx.stroke();
+  ctx.shadowBlur=0;ctx.fillStyle='#dff4fb';ctx.font='bold 13px monospace';ctx.textAlign='center';
+  ctx.fillText(val+'%',cx,cy+4);
+}
+const tempoCv=document.getElementById('tempo');
+const tempoData=Array.from({length:48},()=>R(.15,1));
+function drawTempo(){
+  const {ctx,w,h}=fit(tempoCv);ctx.clearRect(0,0,w,h);
+  const bw=w/tempoData.length;
+  tempoData.forEach((v,i)=>{
+    const bh=v*h;const hot=v>.8;
+    ctx.fillStyle=hot?'#ffb22e':(v>.55?'#34d6ff':'#1c7d9c');
+    ctx.fillRect(i*bw,h-bh,bw-1.2,bh);
+  });
+}
+
+/* ================= POPULATE LISTS ================= */
+const trackRows=document.getElementById('trackRows');
+const trkColors=['#ff3b46','#ffb22e','#34d6ff','#34ff84','#36f1c4'];
+for(let i=0;i<16;i++){
+  const id='GR'+RI(140,990)+RI(100,999)+RI(10,99);
+  const pts=RI(7,72), km=RI(180,1880);
+  const c=trkColors[RI(0,4)];
+  const r=document.createElement('div');r.className='row';r.style.gridTemplateColumns='10px 1fr 42px 56px';
+  r.innerHTML=`<span class="pip" style="background:${c}"></span>
+    <span class="mono" style="color:#9fd9ec">${id}</span>
+    <span class="mono" style="color:${c};text-align:right">${pts} pts</span>
+    <span class="mono" style="text-align:right;color:#4d7e92">${km} km</span>`;
+  trackRows.appendChild(r);
+}
+
+const threatRows=document.getElementById('threatRows');
+const threats=[
+  ['SA-15 TELAR','TRACKING','#ff3b46'],['ZSU-23-4','ACQUIRED','#ffb22e'],
+  ['EW-MODULE LEER','RE-LOCK','#ffb22e'],['PANTSIR S1','TRACKING','#ff3b46'],
+  ['MOBILE AAA','TRACKING','#ff3b46'],['OPTICAL-IR','PASSIVE','#34d6ff'],
+  ['SA-22 GREYHND','ACQUIRED','#ffb22e'],['NEBO-M RADAR','PASSIVE','#34d6ff']
+];
+threats.forEach(([type,st,c])=>{
+  const r=document.createElement('div');r.className='row';r.style.gridTemplateColumns='10px 1fr auto';
+  const sc=st==='TRACKING'?'#34ff84':st==='ACQUIRED'?'#ffb22e':st==='RE-LOCK'?'#ff3b46':'#4d7e92';
+  r.innerHTML=`<span class="pip" style="background:${c}"></span>
+    <span style="color:#9fd9ec;font-size:9px">${type}</span>
+    <span style="color:${sc};font-size:8.5px;letter-spacing:.5px">${st}</span>`;
+  threatRows.appendChild(r);
+});
+
+const fleetRows=document.getElementById('fleetRows');
+const fleet=[
+  ['LYUTI-01','ENROUTE','WP04','92'],['LYUTI-02','STRIKE','TGT','78'],
+  ['LYUTI-03','ENROUTE','WP02','88'],['LYUTI-04','RTB','WP06','95'],
+  ['LYUTI-05','LOITER','HOLD','81']
+];
+fleet.forEach(([id,ph,wp,bl],i)=>{
+  const r=document.createElement('div');r.className='row';r.style.gridTemplateColumns='1fr auto 34px 40px';
+  const c=ph==='STRIKE'?'#ff3b46':'#9fd9ec';
+  const blc=bl<85?'#ffb22e':'#34ff84';
+  r.innerHTML=`<span style="color:${c};font-size:9px">${id}</span>
+    <span style="color:#4d7e92;font-size:8.5px">${ph}</span>
+    <span class="mono" style="color:#34d6ff;font-size:8.5px;text-align:right">${wp}</span>
+    <span class="mono" style="color:${blc};font-size:8.5px;text-align:right">${bl}%</span>`;
+  fleetRows.appendChild(r);
+});
+
+const queueRows=document.getElementById('queueRows');
+const queue=[
+  ['EQ-118','T6T-13M','SA-15 TELAR','PRIO 1'],['EQ-119','T6T-08L','MOBILE AAA','PRIO 2'],
+  ['EQ-120','T6T-22R','ZSU-23-4','PRIO 2'],['EQ-121','T6T-31','PANTSIR S1','PRIO 1']
+];
+queue.forEach(([id,grid,tgt,p])=>{
+  const r=document.createElement('div');r.className='row';r.style.gridTemplateColumns='52px 60px 1fr auto';
+  const pc=p==='PRIO 1'?'#ff3b46':'#ffb22e';
+  r.innerHTML=`<span class="mono" style="color:#34d6ff;font-size:8.5px">${id}</span>
+    <span class="mono" style="color:#9fd9ec;font-size:8.5px">${grid}</span>
+    <span style="color:#4d7e92;font-size:8.5px">${tgt}</span>
+    <span style="color:${pc};font-size:8px;letter-spacing:.5px">${p}</span>`;
+  queueRows.appendChild(r);
+});
+
+/* ================= STREAMING SHELL LOG ================= */
+const shell=document.getElementById('shell');
+const logMsgs=[
+  ['INFO','SCAN COMPLETE  TILE UTM37U-CY-1187  HEAT HIGH  NEW CONTACTS 6'],
+  ['INFO','GNSS LOCK  SV 11/12  HDOP 0.79  ø 0.8m  SPOOF-GUARD ✓'],
+  ['INFO','OPERATOR ZRT-2204 AUTH  SESSION D618FB  2FA TPM-SEALED'],
+  ['WARN','EW SIGNATURE — JAMMING SUSPECTED  BAND L1  FREQ-HOP ENGAGED  CCM-ON'],
+  ['ALERT','EMERGENCY HANDOVER ARMED  PRIMARY BUREVII-3 → SECONDARY BUREVII-3  GUARD CH 243.0'],
+  ['INFO','TIME SYNC  STRATUM-1  ±17µs  PTP DOMAIN 11'],
+  ['INFO','ROE GATE ✓ POSITIVE  ✓ COLLATERAL  ✓ AUTHORITY  WEAPONS GREEN'],
+  ['INFO','OPERATOR DKR-7711 AUTH  SESSION 19B181  2FA TPM-SEALED'],
+  ['WARN','LINK1 DEGRADE  SNR 8.2dB  AUTO RE-ROUTE → RELAY-2'],
+  ['INFO','BDA FUSION  STRIKE EQ-117  HARD KILL  CONF 0.93'],
+  ['INFO','UPLOAD PKG 0127  6 WAYPOINTS  CRC ✓  ACK LYUTI-04'],
+  ['ALERT','THREAT POP-UP  SA-15 TELAR  BRG 047  RNG 14.2km  DEFENSIVE BLINK'],
+];
+function addLog(level,msg){
+  const ts=`${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+  const div=document.createElement('div');
+  div.innerHTML=`<span class="ts">[${ts}]</span> <span class="${level}">${level.padEnd(5)}</span> <span class="msg">${msg}</span>`;
+  shell.appendChild(div);
+  while(shell.children.length>80) shell.removeChild(shell.firstChild);
+  shell.scrollTop=shell.scrollHeight;
+}
+logMsgs.forEach(m=>addLog(m[0],m[1]));
+setInterval(()=>{const m=logMsgs[RI(0,logMsgs.length-1)];addLog(m[0],m[1]);},1400);
+
+/* ================= LIVE TELEMETRY WIGGLE ================= */
+function jitter(){
+  document.getElementById('cpu').textContent=RI(28,44)+'%';
+  document.getElementById('temp').textContent=RI(44,52)+'°C';
+  document.getElementById('disk').textContent=RI(2400,3200)+' MB/s';
+  document.getElementById('mem').textContent=(R(4,5).toFixed(1))+'/64G';
+  document.getElementById('fuseAge').textContent=RI(20,59)+'s';
+  document.getElementById('busStats').textContent=`MSG ${18411+RI(0,400)} · LOSS 0.0${RI(2,6)}% · LATENCY ${RI(9,16)}ms · NET ✓`;
+  document.getElementById('strikeN').textContent=157+RI(0,3);
+  document.getElementById('ms-dist').textContent=(R(308,316).toFixed(1))+' km';
+  document.getElementById('upl').textContent=Math.random()<.3?'WRITE':'SYNC';
+  ring('g1',RI(92,96),'#34d6ff');
+  ring('g2',RI(89,93),'#34f1c4');
+  // shift tempo
+  tempoData.push(R(.15,1));tempoData.shift();
+}
+ring('g1',94,'#34d6ff');ring('g2',91,'#34f1c4');
+setInterval(jitter,1600);
+
+/* ================= ANIMATION LOOP ================= */
+let last=0;
+function loop(ts){
+  drawWave();drawBars();drawTempo();drawMission(ts);
+  requestAnimationFrame(loop);
+}
+function redrawStatic(){drawHistory();}
+window.addEventListener('resize',()=>{redrawStatic();});
+redrawStatic();
+// redraw history occasionally so highlighted vectors flicker
+setInterval(redrawStatic,2600);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
